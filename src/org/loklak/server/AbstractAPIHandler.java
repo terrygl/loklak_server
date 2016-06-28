@@ -48,8 +48,8 @@ import org.loklak.tools.storage.JSONObjectWithDefault;
 public abstract class AbstractAPIHandler extends HttpServlet implements APIHandler {
 
     private String[] serverProtocolHostStub = null;
-    private static Long defaultCookieTime = (long) (60 * 60 * 24 * 7);
-    private static Long defaultAnonymousTime = (long) (60 * 60 * 24);
+    public static final Long defaultCookieTime = (long) (60 * 60 * 24 * 7);
+    public static final Long defaultAnonymousTime = (long) (60 * 60 * 24);
 
     public AbstractAPIHandler() {
         this.serverProtocolHostStub = null;
@@ -74,7 +74,7 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
     public JSONObject[] service(Query call, Authorization rights) throws APIException {
 
         // make call to the embedded api
-        if (this.serverProtocolHostStub == null) return new JSONObject[]{serviceImpl(call, rights, new JSONObjectWithDefault(rights.getPermissions(this)))};
+        if (this.serverProtocolHostStub == null) return new JSONObject[]{serviceImpl(call, null, rights, new JSONObjectWithDefault(rights.getPermissions(this)))};
         
         // make call(s) to a remote api(s)
         JSONObject[] results = new JSONObject[this.serverProtocolHostStub.length];
@@ -101,14 +101,14 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
         return results;
     }
     
-    public abstract JSONObject serviceImpl(Query call, Authorization rights,  final JSONObjectWithDefault permissions) throws APIException;
+    public abstract JSONObject serviceImpl(Query call, HttpServletResponse response, Authorization rights,  final JSONObjectWithDefault permissions) throws APIException;
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         Query post = RemoteAccess.evaluate(request);
         process(request, response, post);
     }
-    
+
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         Query query = RemoteAccess.evaluate(request);
@@ -159,7 +159,7 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
         boolean minified = query.get("minified", false);
         
         try {
-            JSONObject json = serviceImpl(query, authorization, new JSONObjectWithDefault(authorization.getPermissions(this)));
+            JSONObject json = serviceImpl(query, response, authorization, new JSONObjectWithDefault(authorization.getPermissions(this)));
             if  (json == null) {
                 response.sendError(400, "your request does not contain the required data");
                 return;
@@ -207,117 +207,35 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
 			// delete cookie if set
 			deleteLoginCookie(response);
 		}
-		else if(getLoginCookie(request) != null){
+		else if(getLoginCookie(request) != null){ // login via cookie
 			
 			Cookie loginCookie = getLoginCookie(request);
 			
 			ClientCredential credential = new ClientCredential(ClientCredential.Type.cookie, loginCookie.getValue());
 			Authentication authentication = new Authentication(credential, DAO.authentication);
 			
-			if(authentication.getIdentity() != null){
-				
-				if(authentication.checkExpireTime()){
-					
-					//reset cookie validity time
-					authentication.setExpireTime(defaultCookieTime);
-					loginCookie.setMaxAge(defaultCookieTime.intValue());
-					loginCookie.setPath("/"); // bug. The path gets reset
-					response.addCookie(loginCookie);
-						
-					return authentication.getIdentity();
-				}
-				else{
-					authentication.delete();
-					
-					// delete cookie if set
-					deleteLoginCookie(response);
-					
-					Log.getLog().info("Invalid login try via cookie from host: " + request.getRemoteHost());
-				}
+			if(authentication.getIdentity() != null && authentication.checkExpireTime()) {
+
+				//reset cookie validity time
+				authentication.setExpireTime(defaultCookieTime);
+				loginCookie.setMaxAge(defaultCookieTime.intValue());
+				loginCookie.setPath("/"); // bug. The path gets reset
+				response.addCookie(loginCookie);
+
+				return authentication.getIdentity();
 			}
-			else{
-				authentication.delete();
-				
-				// delete cookie if set
-				deleteLoginCookie(response);
-				
-				Log.getLog().info("Invalid login try via cookie from host: " + request.getRemoteHost());
-			}
+
+			authentication.delete();
+
+			// delete cookie if set
+			deleteLoginCookie(response);
+
+			Log.getLog().info("Invalid login try via cookie from host: " + request.getRemoteHost());
 		}
 		else if(request.getSession().getAttribute("identity") != null){ // if identity is registered for session			
 			return (ClientIdentity) request.getSession().getAttribute("identity");
 		}
-		else if (request.getParameter("login") != null && request.getParameter("password") != null ){ // check if login parameters are set
-    		
-    		
-    		String login = null;
-    		String password = null;
-			try {
-				login = URLDecoder.decode(request.getParameter("login"),"UTF-8");
-				password = URLDecoder.decode(request.getParameter("password"),"UTF-8");
-			} catch (UnsupportedEncodingException e) {}
-
-    		ClientCredential credential = new ClientCredential(ClientCredential.Type.passwd_login, login);
-    		Authentication authentication = new Authentication(credential, DAO.authentication);
-    		
-    		// check if password is valid
-    		if(authentication.getIdentity() != null){
-    			
-    			if(authentication.has("activated") && authentication.getBoolean("activated")){
-    			
-	    			if(authentication.has("passwordHash") && authentication.has("salt")){
-	    				
-						String passwordHash = authentication.getString("passwordHash");
-						String salt = authentication.getString("salt");
-
-		    			if(getHash(password, salt).equals(passwordHash)){
-		    				
-		    				ClientIdentity identity = authentication.getIdentity();
-
-		    				// only create a cookie or session if requested (by login page)
-		    				if("true".equals(request.getParameter("request_cookie"))){
-	            				
-	            				// create random string as token
-	            				String loginToken = createRandomString(30);
-	            				
-	            				// create cookie
-	            				Cookie loginCookie = new Cookie("login", loginToken);
-	            				loginCookie.setPath("/");
-	            				loginCookie.setMaxAge(defaultCookieTime.intValue());
-	            				
-	            				// write cookie to database
-	            				ClientCredential cookieCredential = new ClientCredential(ClientCredential.Type.cookie, loginToken);
-	            				JSONObject user_obj = new JSONObject();
-	            				user_obj.put("id",identity.toString());
-	            				user_obj.put("expires_on", Instant.now().getEpochSecond() + defaultCookieTime);
-	            				DAO.authentication.put(cookieCredential.toString(), user_obj, cookieCredential.isPersistent());
-	        	    			
-	            				response.addCookie(loginCookie);
-	        	    		}
-		    				else if("true".equals(request.getParameter("request_session"))){
-		            			request.getSession().setAttribute("identity",identity);
-		            		}
-		    				
-		    				Log.getLog().info("login for user: " + credential.getName() + " via passwd from host: " + request.getRemoteHost());
-		            		
-		            		return identity;
-		    			}
-		    			Log.getLog().info("Invalid login try for user: " + credential.getName() + " via passwd from host: " + request.getRemoteHost());
-		    			throw new APIException(422, "Invalid credentials");
-	    			}
-	    			Log.getLog().info("Invalid login try for user: " + credential.getName() + " from host: " + request.getRemoteHost() + " : password or salt missing in database");
-	    			throw new APIException(422, "Invalid credentials");
-    			}
-    			Log.getLog().info("Invalid login try for user: " + credential.getName() + " from host: " + request.getRemoteHost() + " : user not activated yet");
-    			throw new APIException(422, "User not yet activated");
-    		}
-    		else{
-    			authentication.delete();
-    			Log.getLog().info("Invalid login try for unknown user: " + credential.getName() + " via passwd from host: " + request.getRemoteHost());
-    			throw new APIException(422, "Invalid credentials");
-    		}
-    	}
-    	else if (request.getParameter("access_token") != null){
+    	else if (request.getParameter("access_token") != null){ // access tokens are used by api calls, somehow the equivalent of sessions for browsers
     		ClientCredential credential = new ClientCredential(ClientCredential.Type.access_token, request.getParameter("access_token"));
     		Authentication authentication = new Authentication(credential, DAO.authentication);
 			
@@ -337,9 +255,6 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
     				}
     				return identity;
     			}
-    			Log.getLog().info("Invalid login try for user: " + identity.getName() + " via expired access token from host: " + request.getRemoteHost());
-    			authentication.delete();
-    			throw new APIException(422, "Invalid access token");
     		}
     		Log.getLog().info("Invalid access token from host: " + request.getRemoteHost());
     		authentication.delete();

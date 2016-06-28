@@ -26,6 +26,7 @@ import java.nio.file.Paths;
 import java.util.regex.Pattern;
 
 import javax.naming.ConfigurationException;
+import javax.servlet.http.HttpServletResponse;
 
 import org.json.JSONObject;
 import org.loklak.LoklakEmailHandler;
@@ -71,7 +72,7 @@ public class SignUpService extends AbstractAPIHandler implements APIHandler {
 	}
 
 	@Override
-	public JSONObject serviceImpl(Query post, Authorization rights, final JSONObjectWithDefault permissions)
+	public JSONObject serviceImpl(Query post, HttpServletResponse response, Authorization rights, final JSONObjectWithDefault permissions)
 			throws APIException {
 
 		BaseUserRole serviceLevel = getCustomServiceLevel(rights);

@@ -35,6 +35,8 @@ import org.loklak.server.ClientCredential;
 import org.loklak.server.Query;
 import org.loklak.tools.storage.JSONObjectWithDefault;
 
+import javax.servlet.http.HttpServletResponse;
+
 public class PasswordResetService extends AbstractAPIHandler implements APIHandler {
 
 	private static final long serialVersionUID = -8893457607971788891L;
@@ -55,7 +57,7 @@ public class PasswordResetService extends AbstractAPIHandler implements APIHandl
 	}
 
 	@Override
-	public JSONObject serviceImpl(Query call, Authorization rights, final JSONObjectWithDefault permissions)
+	public JSONObject serviceImpl(Query call, HttpServletResponse response, Authorization rights, final JSONObjectWithDefault permissions)
 			throws APIException {
 		JSONObject result = new JSONObject();
 
