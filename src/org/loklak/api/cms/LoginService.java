@@ -27,13 +27,19 @@ import org.loklak.tools.storage.JSONObjectWithDefault;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
-import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.time.Instant;
 
+/**
+ * This login allows users to login or to check if they are logged in already.
+ * For login, there are three options: session, cookie (both stateful, for browsers) and access-token (stateless, for api access)
+ * It requires the following parameters: login (the login id, usually an email, password and type (one of the above)
+ * To check if the user is logged it, set the parameter 'checkLogin' to true
+ */
 public class LoginService extends AbstractAPIHandler implements APIHandler {
 
 	private static final long serialVersionUID = 8578478303032749879L;
+	private static final long defaultAccessTokenExpireTime = 7 * 24 * 60 * 60;
 
 	@Override
 	public BaseUserRole getMinimalBaseUserRole() {
@@ -55,95 +61,132 @@ public class LoginService extends AbstractAPIHandler implements APIHandler {
 	public JSONObject serviceImpl(Query post, HttpServletResponse response, Authorization authorization, final JSONObjectWithDefault permissions)
 			throws APIException {
 
-		JSONObject result = new JSONObject();
-
-		// if logged in already, return only a message
-		if (authorization.getIdentity().getType() != ClientIdentity.Type.host) {
-			result.put("loggedIn", true);
-			result.put("message", "You are logged in as " + authorization.getIdentity().getName());
+		// login check for app
+		// TODO: change app to use this
+		if(post.get("checkLogin", false)) {
+			JSONObject result = new JSONObject();
+			if (authorization.getIdentity().isEmail()) {
+				result.put("loggedIn", true);
+				result.put("message", "You are logged in as " + authorization.getIdentity().getName());
+			}
+			else{
+				result.put("loggedIn", false);
+				result.put("message", "Not logged in");
+			}
 			return result;
 		}
 
-		if (post.get("login", null) != null && post.get("password", null) != null ){ // check if login parameters are set
-
-
-			String login = null;
-			String password = null;
-			try {
-				login = URLDecoder.decode(post.get("login" ,null), "UTF-8");
-				password = URLDecoder.decode(post.get("password", null), "UTF-8");
-			} catch (Throwable e) {
-				throw new APIException(500, "Server error");
-			}
-
-			ClientCredential credential = new ClientCredential(ClientCredential.Type.passwd_login, login);
-			Authentication authentication = new Authentication(credential, DAO.authentication);
-
-			// check if password is valid
-			if(authentication.getIdentity() != null){
-
-				if(authentication.has("activated") && authentication.getBoolean("activated")){
-
-					if(authentication.has("passwordHash") && authentication.has("salt")){
-
-						String passwordHash = authentication.getString("passwordHash");
-						String salt = authentication.getString("salt");
-
-						if(getHash(password, salt).equals(passwordHash)){
-
-							ClientIdentity identity = authentication.getIdentity();
-
-							// only create a cookie or session if requested (by login page)
-							if("true".equals(post.get("request_cookie", null))){
-
-								// create random string as token
-								String loginToken = createRandomString(30);
-
-								// create cookie
-								Cookie loginCookie = new Cookie("login", loginToken);
-								loginCookie.setPath("/");
-								loginCookie.setMaxAge(defaultCookieTime.intValue());
-
-								// write cookie to database
-								ClientCredential cookieCredential = new ClientCredential(ClientCredential.Type.cookie, loginToken);
-								JSONObject user_obj = new JSONObject();
-								user_obj.put("id",identity.toString());
-								user_obj.put("expires_on", Instant.now().getEpochSecond() + defaultCookieTime);
-								DAO.authentication.put(cookieCredential.toString(), user_obj, cookieCredential.isPersistent());
-
-								response.addCookie(loginCookie);
-							}
-							else if("true".equals(post.get("request_session", null))){
-								post.getRequest().getSession().setAttribute("identity",identity);
-							}
-
-							Log.getLog().info("login for user: " + credential.getName() + " via passwd from host: " + post.getClientHost());
-
-							result.put("loggedIn", true);
-							result.put("message", "You are logged in as " + identity.getName());
-							return result;
-						}
-						// invalid login try, we have to limit this
-						permissions.getInt("maxInvalidLogins", 10);
-
-						Log.getLog().info("Invalid login try for user: " + credential.getName() + " via passwd from host: " + post.getClientHost());
-						throw new APIException(422, "Invalid credentials");
-					}
-					Log.getLog().info("Invalid login try for user: " + credential.getName() + " from host: " + post.getClientHost() + " : password or salt missing in database");
-					throw new APIException(422, "Invalid credentials");
-				}
-				Log.getLog().info("Invalid login try for user: " + credential.getName() + " from host: " + post.getClientHost() + " : user not activated yet");
-				throw new APIException(422, "User not yet activated");
-			}
-			else{
-				authentication.delete();
-				Log.getLog().info("Invalid login try for unknown user: " + credential.getName() + " via passwd from host: " + post.getClientHost());
-				throw new APIException(422, "Invalid credentials");
-			}
+		// check if all required parameters are set
+		if (post.get("login", null) == null || post.get("password", null) == null || post.get("type", null ) == null) {
+			throw new APIException(400, "Login requires the parameters 'login', 'password' and 'type'");
 		}
 
-		result.put("loggedIn", false);
-		result.put("message", "You are not logged in ");
+		// fetch parameters
+		String login;
+		String password;
+		String type;
+		try {
+			login = URLDecoder.decode(post.get("login", null), "UTF-8");
+			password = URLDecoder.decode(post.get("password", null), "UTF-8");
+			type = URLDecoder.decode(post.get("type", null), "UTF-8");
+		} catch (Throwable e) {
+			throw new APIException(500, "Server error");
+		}
+
+		// create Authentication
+		ClientCredential credential = new ClientCredential(ClientCredential.Type.passwd_login, login);
+		Authentication authentication = new Authentication(credential, DAO.authentication);
+
+		if (authentication.getIdentity() == null) { // check if identity is valid
+			authentication.delete();
+			Log.getLog().info("Invalid login try for unknown user: " + credential.getName() + " via passwd from host: " + post.getClientHost());
+			throw new APIException(422, "Invalid credentials");
+		}
+
+		if (!authentication.getBoolean("activated", false)) { // check if identity is valid
+			Log.getLog().info("Invalid login try for user: " + credential.getName() + " from host: " + post.getClientHost() + " : user not activated yet");
+			throw new APIException(422, "User not yet activated");
+		}
+
+		// check if the password is valid
+		String passwordHash;
+		String salt;
+		try {
+			passwordHash = authentication.getString("passwordHash");
+			salt = authentication.getString("salt");
+		} catch (Throwable e) {
+			Log.getLog().info("Invalid login try for user: " + credential.getName() + " from host: " + post.getClientHost() + " : password or salt missing in database");
+			throw new APIException(422, "Invalid credentials");
+		}
+
+		if (!passwordHash.equals(getHash(password, salt))) {
+
+			// TODO: invalid login try, store that in the accounting object of the anonymous identity
+			//permissions.getInt("maxInvalidLogins", 10);
+
+			Log.getLog().info("Invalid login try for user: " + credential.getName() + " via passwd from host: " + post.getClientHost());
+			throw new APIException(422, "Invalid credentials");
+		}
+
+		ClientIdentity identity = authentication.getIdentity();
+		JSONObject result = new JSONObject();
+
+		switch (type) {
+			case "session": // create a browser session
+				post.getRequest().getSession().setAttribute("identity", identity);
+				break;
+			case "cookie": // set a long living cookie
+				// create random string as token
+				String loginToken = createRandomString(30);
+
+				// create cookie
+				Cookie loginCookie = new Cookie("login", loginToken);
+				loginCookie.setPath("/");
+				loginCookie.setMaxAge(defaultCookieTime.intValue());
+
+				// write cookie to database
+				ClientCredential cookieCredential = new ClientCredential(ClientCredential.Type.cookie, loginToken);
+				JSONObject user_obj = new JSONObject();
+				user_obj.put("id", identity.toString());
+				user_obj.put("expires_on", Instant.now().getEpochSecond() + defaultCookieTime);
+				DAO.authentication.put(cookieCredential.toString(), user_obj, cookieCredential.isPersistent());
+
+				response.addCookie(loginCookie);
+				break;
+			case "access-token": // create and display an access token
+
+				// create token
+				String token = createRandomString(30);
+				ClientCredential accessToken = new ClientCredential(ClientCredential.Type.access_token, token);
+				Authentication tokenAuthentication = new Authentication(accessToken, DAO.authentication);
+				tokenAuthentication.setIdentity(identity);
+
+				long valid_seconds;
+				try {
+					valid_seconds = post.get("valid_seconds", defaultAccessTokenExpireTime);
+				} catch (Throwable e) {
+					throw new APIException(400, "Invalid value for 'valid_seconds'");
+				}
+
+				if (valid_seconds == -1) { // valid forever
+					result.put("valid_seconds", "forever");
+				} // -1 means forever, don't add expire time
+				else if (valid_seconds == 0 || valid_seconds < -1) { // invalid values
+					throw new APIException(400, "Invalid value for 'valid_seconds'");
+				} else {
+					tokenAuthentication.setExpireTime(valid_seconds);
+					result.put("valid_seconds", valid_seconds);
+				}
+				result.put("access_token", token);
+
+				break;
+			default:
+				throw new APIException(400, "Invalid type");
+		}
+
+		Log.getLog().info("login for user: " + credential.getName() + " via passwd from host: " + post.getClientHost());
+
+		result.put("message", "You are logged in as " + identity.getName());
 		return result;
 	}
 }
