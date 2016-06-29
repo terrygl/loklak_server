@@ -38,7 +38,7 @@ public class JSONObjectWithDefault extends JSONObject {
         try{
             return getBoolean(key);
         }
-        catch (Exception e){
+        catch (Throwable e){
             return dftval;
         }
     }
@@ -47,7 +47,7 @@ public class JSONObjectWithDefault extends JSONObject {
         try{
             return getDouble(key);
         }
-        catch (Exception e){
+        catch (Throwable e){
             return dftval;
         }
     }
@@ -56,7 +56,7 @@ public class JSONObjectWithDefault extends JSONObject {
         try{
             return getInt(key);
         }
-        catch (Exception e){
+        catch (Throwable e){
             return dftval;
         }
     }
@@ -64,7 +64,7 @@ public class JSONObjectWithDefault extends JSONObject {
         try{
             return getJSONArray(key);
         }
-        catch (Exception e){
+        catch (Throwable e){
             return dftval;
         }
     }
@@ -72,7 +72,16 @@ public class JSONObjectWithDefault extends JSONObject {
         try{
             return getJSONObject(key);
         }
-        catch (Exception e){
+        catch (Throwable e){
+            return dftval;
+        }
+    }
+
+    public JSONObjectWithDefault getJSONObjectWithDefault(String key, JSONObjectWithDefault dftval){
+        try{
+            return new JSONObjectWithDefault(getJSONObject(key));
+        }
+        catch (Throwable e){
             return dftval;
         }
     }
@@ -80,7 +89,7 @@ public class JSONObjectWithDefault extends JSONObject {
         try{
             return getLong(key);
         }
-        catch (Exception e){
+        catch (Throwable e){
             return dftval;
         }
     }
@@ -88,7 +97,7 @@ public class JSONObjectWithDefault extends JSONObject {
         try{
             return getString(key);
         }
-        catch (Exception e){
+        catch (Throwable e){
             return dftval;
         }
     }

@@ -98,19 +98,27 @@ public class SignUpService extends AbstractAPIHandler implements APIHandler {
 		}
 
 		// is this a verification?
-		if (post.get("validateEmail", null) != null && (
-				(auth.getIdentity().getName().equals(post.get("validateEmail", null)) && auth.getIdentity().isEmail()) // the user is logged in via an access token from the email
-				|| permissions.getBoolean("activate", false) // the user is allowed to activate other users
-		)) {
-			ClientCredential credential = new ClientCredential(ClientCredential.Type.passwd_login,
-					auth.getIdentity().getName());
-			Authentication authentication = new Authentication(credential, DAO.authentication);
+		if (post.get("validateEmail", null) != null) {
+			if((auth.getIdentity().getName().equals(post.get("validateEmail", null)) && auth.getIdentity().isEmail()) // the user is logged in via an access token from the email
+				|| permissions.getBoolean("activate", false)){ // the user is allowed to activate other users
 
-			authentication.put("activated", true);
+				ClientCredential credential = new ClientCredential(ClientCredential.Type.passwd_login,
+						auth.getIdentity().getName());
+				Authentication authentication = new Authentication(credential, DAO.authentication);
 
-			result.put("message", "You successfully verified your account!");
-			return result;
+				if (authentication.getIdentity() == null) {
+					authentication.delete();
+					throw new APIException(400, "Bad request"); // do not leak if user exists or not
+				}
+
+				authentication.put("activated", true);
+
+				result.put("message", "You successfully verified your account!");
+				return result;
+			}
+			throw new APIException(400, "Bad request"); // do not leak if user exists or not
 		}
+
 
 
 		boolean activated;

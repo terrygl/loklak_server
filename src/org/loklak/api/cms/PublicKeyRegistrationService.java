@@ -83,6 +83,48 @@ public class PublicKeyRegistrationService extends AbstractAPIHandler implements 
 	public JSONObject serviceImpl(Query post, HttpServletResponse response, Authorization authorization, final JSONObjectWithDefault permissions)
 			throws APIException {
 
-		return null;
+		if(post.get("public_key",null) == null) throw new APIException(400, "No public_key specified");
+
+		String id;
+		if(post.get("id", null) != null) id = post.get("id", null);
+		else id = authorization.getIdentity().getName();
+
+		// check if we are allowed register a key
+		if(!id.equals(authorization.getIdentity().getName())){ // if we don't want to register the key for the current user
+
+			// create Authentication to check if the user id is a registered user
+			ClientCredential credential = new ClientCredential(ClientCredential.Type.passwd_login, id);
+			Authentication authentication = new Authentication(credential, DAO.authentication);
+
+			if (authentication.getIdentity() == null) { // check if identity is valid
+				authentication.delete();
+				throw new APIException(400, "Bad request"); // do not leak if user exists or not
+			}
+
+			// check if the current user is allowed to create a key for the user in question
+			boolean allowed = false;
+			// check if the user in question is in 'users'
+			if(permissions.getJSONObject("users", null).has(id) && permissions.getJSONObjectWithDefault("users", null).getBoolean(id, false)){
+				allowed = true;
+			}
+			else { // check if the user role of the user in question is in 'userRoles'
+				Authorization auth = new Authorization(authentication.getIdentity(), DAO.authorization, DAO.userRoles);
+				for(String key : permissions.getJSONObject("userRoles").keySet()){
+					if(key.equals(auth.getUserRole().getName()) && permissions.getJSONObject("userRoles").getBoolean(key)){
+						allowed = true;
+					}
+				}
+			}
+			if(!allowed) throw new APIException(400, "Bad request"); // do not leak if user exists or not
+		}
+		else{ // if we want to register a key for this user, bad are not allowed to (for example anonymous users)
+			if(!permissions.getBoolean("self", false)) throw new APIException(403, "You are not allowed to register a public key");
+		}
+
+		// TODO: the actual key registration
+
+		JSONObject result = new JSONObject();
+
+		return result;
 	}
 }
