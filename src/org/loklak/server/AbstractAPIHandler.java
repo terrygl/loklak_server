@@ -193,21 +193,12 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
     }
     
     /**
-     * Checks a request for valid login data, send via cookie or parameters
+     * Checks a request for valid login data, either a existing session, a cookie or an access token
      * @return user identity if some login is active, anonymous identity otherwise
      */
     private ClientIdentity getIdentity(HttpServletRequest request, HttpServletResponse response) throws APIException{
     	
-    	// check for login information
-		if("true".equals(request.getParameter("logout"))){	// logout if requested
-			
-			// invalidate session
-			request.getSession().invalidate();
-			
-			// delete cookie if set
-			deleteLoginCookie(response);
-		}
-		else if(getLoginCookie(request) != null){ // login via cookie
+    	if(getLoginCookie(request) != null){ // check if login cookie is set
 			
 			Cookie loginCookie = getLoginCookie(request);
 			
@@ -232,10 +223,10 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
 
 			Log.getLog().info("Invalid login try via cookie from host: " + request.getRemoteHost());
 		}
-		else if(request.getSession().getAttribute("identity") != null){ // if identity is registered for session			
+		else if(request.getSession().getAttribute("identity") != null){ // check session is set
 			return (ClientIdentity) request.getSession().getAttribute("identity");
 		}
-    	else if (request.getParameter("access_token") != null){ // access tokens are used by api calls, somehow the equivalent of sessions for browsers
+    	else if (request.getParameter("access_token") != null){ // access tokens can be used by api calls, somehow the stateless equivalent of sessions for browsers
     		ClientCredential credential = new ClientCredential(ClientCredential.Type.access_token, request.getParameter("access_token"));
     		Authentication authentication = new Authentication(credential, DAO.authentication);
 			
@@ -265,8 +256,8 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
     }
     
     /**
-     * Create or get a anonymous identity
-     * @return
+     * Create or fetch an anonymous identity
+     * @return the anonymous ClientIdentity
      */
     private ClientIdentity getAnonymousIdentity(HttpServletRequest request){
     	ClientCredential credential = new ClientCredential(ClientCredential.Type.host, request.getRemoteHost());
@@ -310,7 +301,12 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
     	}
     	return sb.toString();
     }
-    
+
+    /**
+     * Returns a login cookie if present in the request
+     * @param request
+     * @return the login cookie if present, null otherwise
+     */
     private Cookie getLoginCookie(HttpServletRequest request){
     	if(request.getCookies() != null){
 	    	for(Cookie cookie : request.getCookies()){
@@ -321,8 +317,12 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
     	}
     	return null;
     }
-    
-    private void deleteLoginCookie(HttpServletResponse response){
+
+    /**
+     * Delete the login cookie if present
+     * @param response
+     */
+    protected void deleteLoginCookie(HttpServletResponse response){
     	Cookie deleteCookie = new Cookie("login", null);
 		deleteCookie.setPath("/");
 		deleteCookie.setMaxAge(0);

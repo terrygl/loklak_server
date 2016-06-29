@@ -1,8 +1,9 @@
 $(document).ready(function()
 {
-	var emailerr = false, passerr = false, checked = false, session = true, logout = false;
+	var emailerr = false, passerr = false, checked = false, logout = false;
 
 	$.ajax(	"/api/login.json", {
+	    data: { checkLogin: true },
 		dataType: 'json',
 		success: function (response) {
 			if(response.loggedIn){
@@ -68,7 +69,7 @@ $(document).ready(function()
 			var pwd = encodeURIComponent($('#pass').val());
 			
 			$.ajax(	"/api/login.json", {
-				data: { login: mail, password: pwd, request_cookie: checked, request_session: session },
+				data: { login: mail, password: pwd, type: checked ? "cookie" : "session" },
 				dataType: 'json',
 				success: function (response) {
 					window.location = '/apps/applist/index.html';

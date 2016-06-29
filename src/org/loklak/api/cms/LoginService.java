@@ -29,6 +29,7 @@ import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
 import java.net.URLDecoder;
 import java.time.Instant;
+import java.util.TreeMap;
 
 /**
  * This login allows users to login or to check if they are logged in already.
@@ -50,6 +51,7 @@ public class LoginService extends AbstractAPIHandler implements APIHandler {
 	public JSONObject getDefaultPermissions(BaseUserRole baseUserRole) {
 		JSONObject result = new JSONObject();
 		result.put("maxInvalidLogins", 10);
+		result.put("blockTimeSeconds", 20);
 		return result;
 	}
 
@@ -62,7 +64,6 @@ public class LoginService extends AbstractAPIHandler implements APIHandler {
 			throws APIException {
 
 		// login check for app
-		// TODO: change app to use this
 		if(post.get("checkLogin", false)) {
 			JSONObject result = new JSONObject();
 			if (authorization.getIdentity().isEmail()) {
@@ -76,10 +77,37 @@ public class LoginService extends AbstractAPIHandler implements APIHandler {
 			return result;
 		}
 
-		// check if all required parameters are set
+		// check for login information
+		if(post.get("logout", false)){	// logout if requested
+
+			// invalidate session
+			post.getRequest().getSession().invalidate();
+
+			// delete cookie if set
+			deleteLoginCookie(response);
+
+			JSONObject result = new JSONObject();
+			result.put("message", "Logout successful");
+			return result;
+		}
+
+
+			// check if all required parameters are set
 		if (post.get("login", null) == null || post.get("password", null) == null || post.get("type", null ) == null) {
 			throw new APIException(400, "Login requires the parameters 'login', 'password' and 'type'");
 		}
+
+
+		// check if too many invalid login attempts were made already
+		TreeMap<Long, String> invalidLogins = authorization.getAccounting().getRequests(this.getClass().getCanonicalName());
+		Long lastKey = invalidLogins.floorKey(System.currentTimeMillis() + 1000);
+		if(invalidLogins.size() > permissions.getInt("maxInvalidLogins", 10)
+				&& lastKey > System.currentTimeMillis() - permissions.getInt("blockTimeSeconds", 120) * 1000){
+			throw new APIException(403, "Too many invalid login attempts. Try again in "
+					+ (permissions.getInt("blockTimeSeconds", 120) * 1000 - System.currentTimeMillis() + lastKey) / 1000
+					+ " seconds");
+		}
+
 
 		// fetch parameters
 		String login;
@@ -121,8 +149,8 @@ public class LoginService extends AbstractAPIHandler implements APIHandler {
 
 		if (!passwordHash.equals(getHash(password, salt))) {
 
-			// TODO: invalid login try, store that in the accounting object of the anonymous identity
-			//permissions.getInt("maxInvalidLogins", 10);
+			// save invalid login in accounting object
+			authorization.getAccounting().addRequest(this.getClass().getCanonicalName(), "invalid login");
 
 			Log.getLog().info("Invalid login try for user: " + credential.getName() + " via passwd from host: " + post.getClientHost());
 			throw new APIException(422, "Invalid credentials");
