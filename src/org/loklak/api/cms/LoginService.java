@@ -32,10 +32,11 @@ import java.time.Instant;
 import java.util.TreeMap;
 
 /**
- * This login allows users to login or to check if they are logged in already.
+ * This service allows users to login, logout or to check their login status.
  * For login, there are three options: session, cookie (both stateful, for browsers) and access-token (stateless, for api access)
- * It requires the following parameters: login (the login id, usually an email, password and type (one of the above)
+ * It requires the following parameters: login (the login id, usually an email), password and type (one of the above)
  * To check if the user is logged it, set the parameter 'checkLogin' to true
+ * To logout, set the parameter 'logout' to true
  */
 public class LoginService extends AbstractAPIHandler implements APIHandler {
 
