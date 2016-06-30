@@ -22,7 +22,10 @@ package org.loklak.tools.storage;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-
+/**
+ * This class extends JSONObjects with additional get-methods that accept default values. It catches all possible errors and exceptions,
+ * thus always returning a valid output. It's intention is to provide a saver way to acquire values in security/stability sensitive environments
+ */
 public class JSONObjectWithDefault extends JSONObject {
 
     public JSONObjectWithDefault(){

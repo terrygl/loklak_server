@@ -164,7 +164,7 @@ public class LoklakServer {
         if (startup.exists()){
 	        startup.deleteOnExit();
 	        FileWriter writer = new FileWriter(startup);
-			writer.write("startup".toString());
+			writer.write("startup");
 			writer.close();
         }
         
@@ -246,7 +246,7 @@ public class LoklakServer {
         // signal to startup script
         if (startup.exists()){
         	FileWriter writer = new FileWriter(startup);
-			writer.write("done".toString());
+			writer.write("done");
 			writer.close();
         }
         
@@ -308,9 +308,9 @@ public class LoklakServer {
         if(httpsMode.isGreaterOrEqualTo(HttpsMode.ON)){
         	
         	String keySource = DAO.getConfig("https.keysource", "keystore");
-        	String keystorePath = null;
-        	String keystorePass = null;
-        	String keystoreManagerPass = null;
+        	String keystorePath;
+        	String keystorePass;
+        	String keystoreManagerPass;
         	
         	//check for key source. Can be a java keystore or in pem format (gets converted automatically)
         	if("keystore".equals(keySource)){
@@ -506,7 +506,8 @@ public class LoklakServer {
                 TopMenuService.class,
         		PasswordResetService.class,
                 ChangeUserRole.class,
-                UserManagement.class
+                UserManagement.class,
+                PublicKeyRegistrationService.class
         };
         for (Class<? extends Servlet> service: services)
             try {

@@ -19,26 +19,35 @@
 
 package org.loklak.api.cms;
 
-import org.eclipse.jetty.util.log.Log;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.loklak.data.DAO;
 import org.loklak.server.*;
 import org.loklak.tools.storage.JSONObjectWithDefault;
 
-import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
 import java.net.URLDecoder;
-import java.time.Instant;
-import java.util.TreeMap;
+import java.security.*;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
+import java.util.stream.IntStream;
 
 /**
- * This service allows users to register a public key for login
- * Users can also be granted the right to register keys for individual other users or whole user roles
+ * This service allows users to register a public key for login.
+ * It can either take a public key or create a new key-pair.
+ * Users can also be granted the right to register keys for individual other users or whole user roles.
+ *
+ * To convert a ssh-key into a readable format, call:
+ * - openssl rsa -in id_rsa -pubout -outform DER -out public_key.der (for some reason needs the private key as input)
+ * - convert it to BASE64
+ * - if necessary, encode it URL-friendly
  */
 public class PublicKeyRegistrationService extends AbstractAPIHandler implements APIHandler {
 
 	private static final long serialVersionUID = 8578478303032749879L;
-	private static final long defaultAccessTokenExpireTime = 7 * 24 * 60 * 60;
+
+	private static final int[] allowedKeyLengthRSA = {1024, 2048, 4096};
 
 	@Override
 	public BaseUserRole getMinimalBaseUserRole() {
@@ -76,15 +85,42 @@ public class PublicKeyRegistrationService extends AbstractAPIHandler implements 
 	}
 
 	public String getAPIPath() {
-		return "/api/registerpublickey.json";
+		return "/api/pubkey_registration.json";
 	}
 
 	@Override
 	public JSONObject serviceImpl(Query post, HttpServletResponse response, Authorization authorization, final JSONObjectWithDefault permissions)
 			throws APIException {
 
-		if(post.get("public_key",null) == null) throw new APIException(400, "No public_key specified");
+		if(post.get("register",null) == null && !post.get("create",false) && !post.get("getParameters", false)){
+			throw new APIException(400, "Accepted parameters: 'register', 'create' or 'getParameters'");
+		}
 
+		JSONObject result = new JSONObject();
+
+		// return algorithm parameters and users for whom we are allowed to register a key
+		if (post.get("getParameters", false)) {
+			result.put("self", permissions.getBoolean("self", false));
+			result.put("users", permissions.getJSONObject("users"));
+			result.put("userRoles", permissions.getJSONObject("userRoles"));
+
+			JSONArray algorithms = new JSONArray();
+
+			JSONObject rsa = new JSONObject();
+			rsa.put("algorithm", "RSA");
+			JSONArray keyLength = new JSONArray();
+			for(int i : allowedKeyLengthRSA){
+				keyLength.put(i);
+			}
+			rsa.put("lengths", keyLength);
+			algorithms.put(rsa);
+
+			result.put("algorithms", algorithms);
+
+			return result;
+		}
+
+		// for which id?
 		String id;
 		if(post.get("id", null) != null) id = post.get("id", null);
 		else id = authorization.getIdentity().getName();
@@ -121,10 +157,94 @@ public class PublicKeyRegistrationService extends AbstractAPIHandler implements 
 			if(!permissions.getBoolean("self", false)) throw new APIException(403, "You are not allowed to register a public key");
 		}
 
-		// TODO: the actual key registration
+		// set algorithm. later, we maybe want to support other algorithms as well
+		String algorithm = "RSA";
+		if(post.get("algorithm", null) != null){
+			algorithm = post.get("algorithm", null);
+		}
 
-		JSONObject result = new JSONObject();
 
-		return result;
+		if(post.get("create", false)){ // create a new key pair on the server
+
+			if(algorithm.equals("RSA")) {
+				int keyLength = 2048;
+				if (post.get("key-length", null) != null) {
+					int finalKeyLength = post.get("key-length", 0);
+					if (!IntStream.of(allowedKeyLengthRSA).anyMatch(x -> x == finalKeyLength)) {
+						throw new APIException(400, "Invalid key length.");
+					}
+					keyLength = finalKeyLength;
+				}
+
+				KeyPairGenerator keyGen;
+				KeyPair keyPair;
+				try {
+					keyGen = KeyPairGenerator.getInstance(algorithm);
+					keyGen.initialize(keyLength);
+					keyPair = keyGen.genKeyPair();
+				} catch (NoSuchAlgorithmException e) {
+					throw new APIException(500, "Server error");
+				}
+
+				registerKey(keyPair.getPublic());
+
+				result.put("public-key", Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()));
+				result.put("private-key", Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded()));
+				result.put("message", "Successfully created and registered key. Make sure to copy the private key, it won't be saved on the server");
+
+				return result;
+			}
+			throw new APIException(400, "Unsupported algorithm");
+		}
+		else if(post.get("register", null) != null){
+
+			if(algorithm.equals("RSA")) {
+				RSAPublicKey pub;
+				try {
+					String encodedKey = URLDecoder.decode(post.get("register", null), "UTF-8");
+					X509EncodedKeySpec keySpec = new X509EncodedKeySpec(Base64.getDecoder().decode(encodedKey));
+					pub = (RSAPublicKey) KeyFactory.getInstance(algorithm).generatePublic(keySpec);
+				} catch (Throwable e) {
+					throw new APIException(400, "Public key not readable");
+				}
+
+				// check key size (not really perfect yet)
+				int keySize;
+				int bitLength = pub.getModulus().bitLength();
+				if (bitLength <= 512) {
+					keySize = 512;
+				}
+				else if (bitLength <= 1024) {
+					keySize = 1024;
+				}
+				else if (bitLength <= 2048) {
+					keySize = 2048;
+				}
+				else if (bitLength <= 4096) {
+					keySize = 4096;
+				}
+				else {
+					keySize = 8192;
+				}
+				if (!IntStream.of(allowedKeyLengthRSA).anyMatch(x -> x == keySize)) {
+					throw new APIException(400, "Invalid key length.");
+				}
+
+				registerKey(pub);
+
+				result.put("public-key", Base64.getEncoder().encodeToString(pub.getEncoded()));
+				result.put("message", "Successfully registered key.");
+
+				return result;
+			}
+			throw new APIException(400, "Unsupported algorithm");
+		}
+
+		throw new APIException(400, "Invalid parameter");
+	}
+
+	private void registerKey(PublicKey key){
+
 	}
 }
+
