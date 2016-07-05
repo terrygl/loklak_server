@@ -74,7 +74,7 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
     public JSONObject[] service(Query call, Authorization rights) throws APIException {
 
         // make call to the embedded api
-        if (this.serverProtocolHostStub == null) return new JSONObject[]{serviceImpl(call, null, rights, new JSONObjectWithDefault(rights.getPermissions(this)))};
+        if (this.serverProtocolHostStub == null) return new JSONObject[]{serviceImpl(call, null, rights, rights.getPermissions(this))};
         
         // make call(s) to a remote api(s)
         JSONObject[] results = new JSONObject[this.serverProtocolHostStub.length];
@@ -159,7 +159,7 @@ public abstract class AbstractAPIHandler extends HttpServlet implements APIHandl
         boolean minified = query.get("minified", false);
         
         try {
-            JSONObject json = serviceImpl(query, response, authorization, new JSONObjectWithDefault(authorization.getPermissions(this)));
+            JSONObject json = serviceImpl(query, response, authorization, authorization.getPermissions(this));
             if  (json == null) {
                 response.sendError(400, "your request does not contain the required data");
                 return;
