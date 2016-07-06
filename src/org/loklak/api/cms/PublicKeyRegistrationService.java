@@ -23,6 +23,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.loklak.data.DAO;
 import org.loklak.server.*;
+import org.loklak.tools.IO;
 import org.loklak.tools.storage.JSONObjectWithDefault;
 
 import javax.servlet.http.HttpServletResponse;
@@ -186,10 +187,11 @@ public class PublicKeyRegistrationService extends AbstractAPIHandler implements 
 					throw new APIException(500, "Server error");
 				}
 
-				registerKey(keyPair.getPublic());
+				registerKey(authorization.getIdentity(), keyPair.getPublic());
 
 				result.put("public-key", Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()));
 				result.put("private-key", Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded()));
+				result.put("key-hash", IO.getKeyHash(keyPair.getPublic()));
 				result.put("message", "Successfully created and registered key. Make sure to copy the private key, it won't be saved on the server");
 
 				return result;
@@ -230,9 +232,10 @@ public class PublicKeyRegistrationService extends AbstractAPIHandler implements 
 					throw new APIException(400, "Invalid key length.");
 				}
 
-				registerKey(pub);
+				registerKey(authorization.getIdentity(), pub);
 
 				result.put("public-key", Base64.getEncoder().encodeToString(pub.getEncoded()));
+				result.put("key-hash", IO.getKeyHash(pub));
 				result.put("message", "Successfully registered key.");
 
 				return result;
@@ -243,8 +246,27 @@ public class PublicKeyRegistrationService extends AbstractAPIHandler implements 
 		throw new APIException(400, "Invalid parameter");
 	}
 
-	private void registerKey(PublicKey key){
+	private void registerKey(ClientIdentity id, PublicKey key){
+		JSONObject user_obj;
+		JSONObject key_array;
 
+		try{
+			user_obj = DAO.login_keys.getJSONObject(id.toString());
+		} catch (Throwable e){
+			user_obj = new JSONObject();
+			DAO.login_keys.put(id.toString(), user_obj);
+		}
+
+		try{
+			key_array = user_obj.getJSONObject("keys");
+		} catch (Throwable e){
+			key_array = new JSONObject();
+			user_obj.put("keys", key_array);
+		}
+
+		key_array.put(IO.getKeyHash(key),IO.getKeyAsString(key));
+
+		DAO.login_keys.commit();
 	}
 }
 
