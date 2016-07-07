@@ -1,6 +1,6 @@
 $(document).ready(function()
 {
-	var emailerr = false, passerr = false, checked = false, logout = false;
+	var emailerr = false, passerr = false, checked = $('#remember').prop("checked"), logout = false;
 
 	$.ajax(	"/api/login.json", {
 	    data: { checkLogin: true },
@@ -30,11 +30,7 @@ $(document).ready(function()
 	})
 
 	$('#remember').click(function(){
-		if($(this).prop("checked")){
-			checked = true;
-		} else{
-			checked = false;
-		}
+	    checked = $(this).prop("checked");
 	});
 
 	$('#login').click(function(){

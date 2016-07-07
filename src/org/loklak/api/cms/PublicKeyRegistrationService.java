@@ -135,7 +135,7 @@ public class PublicKeyRegistrationService extends AbstractAPIHandler implements 
 
 			if (authentication.getIdentity() == null) { // check if identity is valid
 				authentication.delete();
-				throw new APIException(400, "Bad request"); // do not leak if user exists or not
+				throw new APIException(400, "Bad request1"); // do not leak if user exists or not
 			}
 
 			// check if the current user is allowed to create a key for the user in question
@@ -152,7 +152,7 @@ public class PublicKeyRegistrationService extends AbstractAPIHandler implements 
 					}
 				}
 			}
-			if(!allowed) throw new APIException(400, "Bad request"); // do not leak if user exists or not
+			if(!allowed) throw new APIException(400, "Bad request2"); // do not leak if user exists or not
 		}
 		else{ // if we want to register a key for this user, bad are not allowed to (for example anonymous users)
 			if(!permissions.getBoolean("self", false)) throw new APIException(403, "You are not allowed to register a public key");
@@ -189,9 +189,9 @@ public class PublicKeyRegistrationService extends AbstractAPIHandler implements 
 
 				registerKey(authorization.getIdentity(), keyPair.getPublic());
 
-				result.put("public-key", Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()));
-				result.put("private-key", Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded()));
-				result.put("key-hash", IO.getKeyHash(keyPair.getPublic()));
+				result.put("publickey", Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()));
+				result.put("privatekey", Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded()));
+				result.put("keyhash", IO.getKeyHash(keyPair.getPublic()));
 				result.put("message", "Successfully created and registered key. Make sure to copy the private key, it won't be saved on the server");
 
 				return result;
@@ -234,8 +234,8 @@ public class PublicKeyRegistrationService extends AbstractAPIHandler implements 
 
 				registerKey(authorization.getIdentity(), pub);
 
-				result.put("public-key", Base64.getEncoder().encodeToString(pub.getEncoded()));
-				result.put("key-hash", IO.getKeyHash(pub));
+				result.put("publickey", Base64.getEncoder().encodeToString(pub.getEncoded()));
+				result.put("keyhash", IO.getKeyHash(pub));
 				result.put("message", "Successfully registered key.");
 
 				return result;
